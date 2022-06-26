@@ -1,0 +1,25 @@
+{
+  "mtu": 1462,
+  "channel_limit": 100,
+  "api_addr": "127.0.0.1:3030",
+  "tcp_heartbeat_interval_secs": 5,
+  "udp_heartbeat_interval_secs": 5,
+  "reconnect_interval_secs": 3,
+  "udp_socket_recv_buffer_size": 8192,
+  "udp_socket_send_buffer_size": 8192,
+  "tun_handler_thread_count": 1,
+  "udp_handler_thread_count": 1,
+  "network_ranges": [
+    { 
+      "server_addr": "8.130.13.97:12345",
+      "tun": {
+        "ip": "192.0.0.99",
+        "netmask": "255.255.255.0"
+      },
+      "key": "dxk",
+      "mode": "UDP_AND_TCP",
+      "lan_ip_addr": "192.168.123.19",
+      "try_send_to_lan_addr": false
+    }
+  ]
+}
