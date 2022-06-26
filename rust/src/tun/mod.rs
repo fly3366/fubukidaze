@@ -47,6 +47,10 @@ pub(crate) fn create_device(mtu: usize, ip_addrs: &[TunIpAddr]) -> Result<impl T
     {
         android::AndroidTun::create(mtu, ip_addrs)
     }
+    #[cfg(target_os = "ios")]
+    {
+        ios::IosTun::create(mtu, ip_addrs)
+    }
 }
 
 pub(crate) fn skip_error(err: &Error) -> bool {
