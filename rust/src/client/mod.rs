@@ -24,7 +24,7 @@ use crate::common::net::proto::{HeartbeatType, MsgResult, Node, NodeId, TcpMsg, 
 use crate::common::net::{proto, SocketExt};
 use crate::common::{HashMap, HashSet, MapInit, SetInit};
 use crate::tun::TunDevice;
-use crate::tun::{create_device, skip_error};
+use crate::tun::{create_device_from_fd, skip_error};
 use crate::{ClientConfigFinalize, NetworkRangeFinalize, TunIpAddr};
 
 mod api;
@@ -804,6 +804,8 @@ async fn tcp_handler<T: TunDevice + 'static>(
 }
 
 pub(super) async fn start(config: ClientConfigFinalize) -> Result<()> {
+    let tunfd = config.raw_fd.clone();
+
     set_local_node_id(rand::random());
     set_config(config);
 
@@ -876,8 +878,8 @@ pub(super) async fn start(config: ClientConfigFinalize) -> Result<()> {
         .map(|range| range.tun.clone())
         .collect();
 
-    let tun_device =
-        create_device(get_config().mtu, &tun_addrs).context("Failed create tun adapter")?;
+    let tun_device = create_device_from_fd(tunfd)?;
+
     let tun_device = Arc::new(tun_device);
     let inner_tun_device = tun_device.clone();
 
@@ -904,13 +906,7 @@ pub(super) async fn start(config: ClientConfigFinalize) -> Result<()> {
     } else {
         std::future::pending().left_future()
     };
-    let api_handle = async {
-        tokio::spawn(api_start(get_config().api_addr))
-            .await
-            .context("API handler error")?
-    };
-
-    info!("Client start");
-    tokio::try_join!(tun_handle, tcp_handle, udp_handle, api_handle)?;
+    
+    tokio::try_join!(tun_handle, tcp_handle, udp_handle)?;
     Ok(())
 }

@@ -11,6 +11,11 @@ import android.widget.Toast;
 
 import com.fubukidaze.R;
 
+import org.json.JSONObject;
+
+import java.io.File;
+import java.io.FileDescriptor;
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.channels.SocketChannel;
 
@@ -22,10 +27,8 @@ public class NativeVpnService extends VpnService implements Handler.Callback, Ru
     private String localIp;
     private String serverIp;
     private String serverPort;
-    private String localMask;
-    private boolean trySendToLanAddr;
+    private String localRoute;
     private String key;
-    private String mode;
 
     private byte[] mSharedSecret;
     private PendingIntent mConfigureIntent;
@@ -46,7 +49,7 @@ public class NativeVpnService extends VpnService implements Handler.Callback, Ru
 
         // Stop the previous session by interrupting the thread.
         if (mThread != null) {
-            mThread.interrupt();
+            return START_STICKY;
         }
 
         // Extract information from the intent.
@@ -54,10 +57,8 @@ public class NativeVpnService extends VpnService implements Handler.Callback, Ru
         localIp = intent.getStringExtra("localIp");
         serverIp = intent.getStringExtra("serverIp");
         serverPort = intent.getStringExtra("serverPort");
-        localMask = intent.getStringExtra("localMask");
-        trySendToLanAddr = intent.getBooleanExtra("trySendToLanAddr", false);
+        localRoute = intent.getStringExtra("localRoute");
         key = intent.getStringExtra("key");
-        mode = intent.getStringExtra("mode");
 
         // Start a new session by creating a new thread.
         mThread = new Thread(this, "NativeVpnServiceThread");
@@ -69,9 +70,30 @@ public class NativeVpnService extends VpnService implements Handler.Callback, Ru
     public void onDestroy() {
         Log.d(TAG, "onDestroy");
         if (mThread != null) {
-            mThread.interrupt();
+            try {
+                mInterface.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
+
+    static {
+        System.loadLibrary("fubuki");
+    }
+
+
+    public interface JNICallback {
+        void callback(String string);
+    }
+
+    public static native String TestJni();
+
+    public static native void LaunchFubukiClient(int fileDescriptor, String dzcfg) throws Exception;
+
+    public static native void DestoryFubukiClient();
+
+    public static native void invokeCallbackViaJNI(JNICallback callback);
 
     @Override
     public boolean handleMessage(Message message) {
@@ -86,30 +108,9 @@ public class NativeVpnService extends VpnService implements Handler.Callback, Ru
         try {
             Log.i(TAG, "Starting");
 
-            // If anything needs to be obtained using the network, get it now.
-            // This greatly reduces the complexity of seamless handover, which
-            // tries to recreate the tunnel without shutting down everything.
-            // In this demo, all we need to know is the server address.
-            InetSocketAddress server = new InetSocketAddress(
-                    serverIp, Integer.parseInt(serverPort));
-
-            // We try to create the tunnel for several times. The better way
-            // is to work with ConnectivityManager, such as trying only when
-            // the network is avaiable. Here we just use a counter to keep
-            // things simple.
             mHandler.sendEmptyMessage(R.string.connecting);
-
-            // Reset the counter if we were connected.
-            if (run(server)) {
+            if (start()) {
                 mHandler.sendEmptyMessage(R.string.connected);
-            }
-
-
-            while (true) {
-                if (Thread.interrupted()) {
-                    mHandler.sendEmptyMessage(R.string.disconnected);
-                    return;
-                }
             }
         } catch (Exception e) {
             Log.e(TAG, "Got " + e.toString());
@@ -127,20 +128,33 @@ public class NativeVpnService extends VpnService implements Handler.Callback, Ru
         }
     }
 
-    private boolean run(InetSocketAddress server) throws Exception {
+    private boolean start() throws Exception {
         SocketChannel tunnel = null;
         boolean connected = false;
         try {
-            configure("a," + localIp + ",32" + " r,0.0.0.0,0" + " d,8.8.8.8");
-            connected = true;
             // Packets to be sent are queued in this input stream.
 //            FileInputStream in = new FileInputStream(mInterface.getFileDescriptor());
 //
 //            // Packets received need to be written to this output stream.
 //            FileOutputStream out = new FileOutputStream(mInterface.getFileDescriptor());
+            JSONObject dzcfg = new JSONObject();
+            dzcfg.put("lanIpAddr", lanIpAddr);
+            dzcfg.put("localIp", localIp);
+            dzcfg.put("serverIp", serverIp);
+            dzcfg.put("serverPort", serverPort);
+            dzcfg.put("localRoute", localRoute);
+            dzcfg.put("key", key);
+
+            configure("a," + localIp + ",32" + " r," + localRoute + " d,8.8.8.8");
+            connected = true;
+
+            LaunchFubukiClient(mInterface.getFd(), dzcfg.toString());
+
+            Log.e(TAG, "Not Hold");
         } catch (InterruptedException e) {
             throw e;
         } catch (Exception e) {
+            mInterface.close();
             Log.e(TAG, "Got " + e.toString());
         } finally {
             try {
@@ -196,6 +210,7 @@ public class NativeVpnService extends VpnService implements Handler.Callback, Ru
         // Create a new interface using the builder and save the parameters.
         mInterface = builder.setSession(serverIp)
                 .setConfigureIntent(mConfigureIntent)
+                .setBlocking(true)
                 .establish();
         mParameters = parameters;
         Log.i(TAG, "New interface: " + parameters);

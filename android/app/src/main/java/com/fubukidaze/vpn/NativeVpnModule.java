@@ -14,6 +14,8 @@ import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 
+import java.io.FileDescriptor;
+
 
 /**
  * SplashScreen
@@ -33,19 +35,7 @@ public class NativeVpnModule extends ReactContextBaseJavaModule {
         return "NativeVpn";
     }
 
-    static {
-        System.loadLibrary("fubuki");
-    }
 
-    public interface JNICallback {
-        void callback(String string);
-    }
-
-    public static native String TestJni();
-    public static native void LaunchFubukiClient() throws Exception;
-    public static native void DestoryFubukiClient();
-
-    public static native void invokeCallbackViaJNI(JNICallback callback);
 
     /**
      * SendEvent
@@ -53,7 +43,9 @@ public class NativeVpnModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void destory() {
         Log.d(TAG, "destory");
+        Intent stopIntent = new Intent(getReactApplicationContext(), NativeVpnService.class);
 
+        getReactApplicationContext().stopService(stopIntent);
         return;
     }
 
@@ -62,8 +54,6 @@ public class NativeVpnModule extends ReactContextBaseJavaModule {
      */
     @ReactMethod
     public void open(ReadableMap cfg) {
-        Log.d(TAG, "open rust: " + TestJni());
-
         WritableMap idData = Arguments.createMap();
         idData.merge(cfg);
 
@@ -80,41 +70,27 @@ public class NativeVpnModule extends ReactContextBaseJavaModule {
                 + cfg.getString("serverIp")
                 + ", serverPort: "
                 + cfg.getString("serverPort")
-                + ", localMask: "
-                + cfg.getString("localMask")
-                + ", trySendToLanAddr: "
-                + cfg.getBoolean("trySendToLanAddr")
+                + ", localRoute: "
+                + cfg.getString("localRoute")
                 + ", key: "
-                + cfg.getString("key")
-                + ", mode: "
-                + cfg.getString("mode"));
+                + cfg.getString("key"));
 
-        try {
-            LaunchFubukiClient();
-        }catch (Exception e) {
-            Log.d(TAG, "startVPN: " + e);
+        Intent intent = NativeVpnService.prepare(getReactApplicationContext());
+        if (intent != null) {
+            Log.e(TAG, "Bad Prepare, er: " + intent);
+            getCurrentActivity().startActivityForResult(intent, 0);
+        } else {
+            Log.e(TAG, "Allowed Prepare, er: " + intent);
+            Intent startIntent = new Intent(getReactApplicationContext(), NativeVpnService.class)
+                    .putExtra("lanIpAddr", cfg.getString("lanIpAddr"))
+                    .putExtra("localIp", cfg.getString("localIp"))
+                    .putExtra("serverIp", cfg.getString("serverIp"))
+                    .putExtra("serverPort", cfg.getString("serverPort"))
+                    .putExtra("localRoute", cfg.getString("localRoute"))
+                    .putExtra("key", cfg.getString("key"));
+
+            getReactApplicationContext().startService(startIntent);
         }
-
-
-
-//        Intent intent = NativeVpnService.prepare(getReactApplicationContext());
-//        if (intent != null) {
-//            Log.e(TAG, "Bad Prepare, er: " + intent);
-//            getCurrentActivity().startActivityForResult(intent, 0);
-//        } else {
-//            Log.e(TAG, "Allowed Prepare, er: " + intent);
-//            Intent startIntent = new Intent(getReactApplicationContext(), NativeVpnService.class)
-//                    .putExtra("lanIpAddr", cfg.getString("lanIpAddr"))
-//                    .putExtra("localIp", cfg.getString("localIp"))
-//                    .putExtra("serverIp", cfg.getString("serverIp"))
-//                    .putExtra("serverPort", cfg.getString("serverPort"))
-//                    .putExtra("localMask", cfg.getString("localMask"))
-//                    .putExtra("trySendToLanAddr", cfg.getBoolean("trySendToLanAddr"))
-//                    .putExtra("key", cfg.getString("key"))
-//                    .putExtra("mode", cfg.getString("mode"));
-//
-//            getReactApplicationContext().startService(startIntent);
-//        }
     }
 
     public void sendEventToJs(ReactContext reactContext, String eventName, WritableMap params) {

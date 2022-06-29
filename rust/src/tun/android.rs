@@ -2,11 +2,8 @@ use std::cell::UnsafeCell;
 use std::io;
 use std::io::{Error, ErrorKind, Result};
 use std::io::{Read, Write};
-use std::process::Command;
-use tun::Device;
 
 use crate::tun::TunDevice;
-use crate::TunIpAddr;
 
 pub struct AndroidTun {
     fd: UnsafeCell<tun::platform::Device>,
@@ -15,39 +12,25 @@ pub struct AndroidTun {
 unsafe impl Sync for AndroidTun {}
 
 impl AndroidTun {
-    pub(super) fn create(mtu: usize, ip_addrs: &[TunIpAddr]) -> Result<AndroidTun> {
-        let mut config = tun::Configuration::default();
-        config
-            .address(ip_addrs[0].ip)
-            .netmask(ip_addrs[0].netmask)
-            .mtu(mtu as i32)
-            .up();
+    pub(super) fn create(fd: std::os::raw::c_int) -> Result<AndroidTun> {
+        debug!("1111111111");
+        let mut cfg = tun::Configuration::default();
+        debug!("2222222222");
+        cfg.raw_fd(fd);
+        let device = tun::create(&cfg).map_err(|e| io::Error::new(io::ErrorKind::Other, e));
 
-        let device = tun::create(&config).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        let tun_name = device.name();
-
-        for TunIpAddr { ip, netmask } in &ip_addrs[1..] {
-            let count = u32::from(*netmask).count_ones();
-
-            let status = Command::new("ip")
-                .args([
-                    "addr",
-                    "add",
-                    format!("{}/{}", ip, count).as_str(),
-                    "dev",
-                    tun_name,
-                ])
-                .output()?
-                .status;
-
-            if !status.success() {
-                return Err(Error::new(ErrorKind::Other, "Failed to add tun ip address"));
+        debug!("333333333");
+        match device {
+            Ok(tund) => {
+                Ok(AndroidTun {
+                    fd: UnsafeCell::new(tund),
+                })
+            },
+            Err(e) => {
+                return Err(Error::new(ErrorKind::Other, e));
             }
         }
 
-        Ok(AndroidTun {
-            fd: UnsafeCell::new(device),
-        })
     }
 }
 

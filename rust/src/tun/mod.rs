@@ -1,18 +1,7 @@
 use std::io::{Error, Result};
 use std::sync::Arc;
 
-use crate::TunIpAddr;
-
-#[cfg(target_os = "linux")]
-mod linux;
-#[cfg(target_os = "macos")]
-mod macos;
-#[cfg(target_os = "windows")]
-mod windows;
-#[cfg(target_os = "android")]
 mod android;
-#[cfg(target_os = "ios")]
-mod ios;
 
 pub trait TunDevice: Send + Sync {
     fn send_packet(&self, packet: &[u8]) -> Result<()>;
@@ -30,27 +19,8 @@ impl<T: TunDevice> TunDevice for Arc<T> {
     }
 }
 
-pub(crate) fn create_device(mtu: usize, ip_addrs: &[TunIpAddr]) -> Result<impl TunDevice> {
-    #[cfg(target_os = "windows")]
-    {
-        windows::Wintun::create(mtu, ip_addrs)
-    }
-    #[cfg(target_os = "linux")]
-    {
-        linux::Linuxtun::create(mtu, ip_addrs)
-    }
-    #[cfg(target_os = "macos")]
-    {
-        macos::Macostun::create(mtu, ip_addrs)
-    }
-    #[cfg(target_os = "android")]
-    {
-        android::AndroidTun::create(mtu, ip_addrs)
-    }
-    #[cfg(target_os = "ios")]
-    {
-        ios::IosTun::create(mtu, ip_addrs)
-    }
+pub(crate) fn create_device_from_fd(fd: std::os::raw::c_int) -> Result<impl TunDevice> {
+    android::AndroidTun::create(fd)
 }
 
 pub(crate) fn skip_error(err: &Error) -> bool {

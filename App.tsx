@@ -1,121 +1,137 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * Generated with the TypeScript template
- * https://github.com/react-native-community/react-native-template-typescript
- *
- * @format
- */
+import React, { useState } from 'react';
+import {
+  Button,
+  Dimensions,
+  ImageBackground,
+  KeyboardAvoidingView,
+  SafeAreaView,
+  StyleSheet,
+  TextInput,
+  ToastAndroid,
+} from 'react-native';
 
- import React, { ReactNode, useState } from 'react';
- import {
-   Alert,
-   Button,
-   NativeModules,
-   SafeAreaView,
-   ScrollView,
-   StatusBar,
-   StyleSheet,
-   Text,
-   useColorScheme,
-   View,
- } from 'react-native';
- 
- import {
-   Colors,
-   DebugInstructions,
-   Header,
-   LearnMoreLinks,
-   ReloadInstructions,
- } from 'react-native/Libraries/NewAppScreen';
- import { FubukiConfig, GetNativeVpn } from './src/vpn';
- 
- const Section: React.FC<{
-   title: string;
-   children?: ReactNode;
- }> = ({ children, title }) => {
-   const isDarkMode = useColorScheme() === 'dark';
-   return (
-     <View style={styles.sectionContainer}>
-       <Text
-         style={[
-           styles.sectionTitle,
-           {
-             color: isDarkMode ? Colors.white : Colors.black,
-           },
-         ]}>
-         {title}
-       </Text>
-       <Text
-         style={[
-           styles.sectionDescription,
-           {
-             color: isDarkMode ? Colors.light : Colors.dark,
-           },
-         ]}>
-         {children}
-       </Text>
-     </View>
-   );
- };
- 
- const App = () => {
-   const isDarkMode = useColorScheme() === 'dark';
- 
-   const backgroundStyle = {
-     backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
-   };
- 
-   const [cfg, setCfg] = useState<FubukiConfig>({lanIpAddr: "2222"})
-   const [data, setData] = useState<any>("Null")
- 
-   return (
-     <SafeAreaView style={backgroundStyle}>
-       <Text>
-         {data}</Text>
-         <Button title='Fubuki!' onPress={()=> {
-           GetNativeVpn().open({
-             lanIpAddr: "192.168.123.20",
-             localIp: "192.0.0.11",
-             serverIp: "8.130.13.97",
-             serverPort: "12345",
-             localMask: "255.255.255.0",
-             trySendToLanAddr: false,
-             key: "dxk",
-             mode: "UDP_AND_TCP"
-           }, {
-             onData: (data) => {
-               setData(JSON.stringify(data))
-             }
-           }).then(e => {
-             setData("Enable")
-           }).catch(e => {
-             
-           })
-         }}/>
-     </SafeAreaView>
-   );
- };
- 
- const styles = StyleSheet.create({
-   sectionContainer: {
-     marginTop: 32,
-     paddingHorizontal: 24,
-   },
-   sectionTitle: {
-     fontSize: 24,
-     fontWeight: '600',
-   },
-   sectionDescription: {
-     marginTop: 8,
-     fontSize: 18,
-     fontWeight: '400',
-   },
-   highlight: {
-     fontWeight: '700',
-   },
- });
- 
- export default App;
- 
+const nh = Dimensions.get("screen").height
+const nw = Dimensions.get("screen").width
+
+import { GetNativeVpn } from './src/vpn';
+
+const App = () => {
+  const [lanIpAddr, setLanIpAddr] = useState<string>()
+  const [localIp, setLocalIp] = useState<string>()
+  const [serverIp, setServerIp] = useState<string>()
+  const [serverPort, setServerPort] = useState<string>()
+  const [localRoute, setLocalRoute] = useState<string>()
+  const [key, setKey] = useState<string>()
+
+  return (
+    <SafeAreaView>
+      <KeyboardAvoidingView enabled behavior='padding' style={styles.Container}>
+        <ImageBackground source={require("./src/assert/fubuki.jpg")} style={styles.Container}>
+          <TextInput
+            style={styles.InputBase}
+            placeholder={"lanIpAddr(192.x.x.x)"}
+            placeholderTextColor={"blue"}
+            value={lanIpAddr}
+            onChangeText={(v) => {
+              setLanIpAddr(v)
+            }} />
+          <TextInput
+            style={styles.InputBase}
+            placeholder={"localIp(x.x.x.x)"}
+            placeholderTextColor={"blue"}
+            value={localIp}
+            onChangeText={(v) => {
+              setLocalIp(v)
+            }} />
+          <TextInput
+            style={styles.InputBase}
+            placeholder={"serverIp(x.x.x.x)"}
+            placeholderTextColor={"blue"}
+            value={serverIp}
+            onChangeText={(v) => {
+              setServerIp(v)
+            }} />
+          <TextInput
+            style={styles.InputBase}
+            placeholder={"serverPort(xxx)"}
+            placeholderTextColor={"blue"}
+            value={serverPort}
+            onChangeText={(v) => {
+              setServerPort(v)
+            }} />
+          <TextInput
+            style={styles.InputBase}
+            placeholder={"localRoute(192.x.x.x) Don't use 0.0.0.0,0"}
+            placeholderTextColor={"blue"}
+            value={localRoute}
+            onChangeText={(v) => {
+              setLocalRoute(v)
+            }} />
+          <TextInput
+            style={styles.InputBase}
+            placeholder={"key(xxx)"}
+            placeholderTextColor={"blue"}
+            value={key}
+            onChangeText={(v) => {
+              setKey(v)
+            }} />
+          <Button
+            title='Connect'
+            color={"green"}
+            onPress={() => {
+              GetNativeVpn().open({
+                lanIpAddr: lanIpAddr,
+                localIp: localIp,
+                serverIp: serverIp,
+                serverPort: serverPort,
+                localRoute: localRoute,
+                key: key,
+              }).then(_ => {
+                ToastAndroid.show("Connected!", ToastAndroid.SHORT)
+              }).catch(e => {
+                ToastAndroid.show("Connect Error: !" + e, ToastAndroid.SHORT)
+              })
+            }} />
+            
+          <Button
+            title='Disconnect'
+            color={"pink"}
+            onPress={() => {
+              GetNativeVpn().destory()
+              ToastAndroid.show("Disconnected!", ToastAndroid.SHORT)
+            }} />
+        </ImageBackground>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  Background: {
+    width: "100%",
+    height: "100%"
+  },
+  Container: {
+    width: nw,
+    height: nh,
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "scroll"
+  },
+  InputBase: {
+    width: "80%",
+    height: "6%",
+    backgroundColor: "yellow",
+    opacity: 0.4,
+    margin: "1%"
+  },
+  BtntBase: {
+    width: "80%",
+    height: "6%",
+    opacity: 0.4,
+    margin: "1%"
+  }
+});
+
+export default App;

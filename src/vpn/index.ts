@@ -1,47 +1,25 @@
-import { Alert, DeviceEventEmitter, EmitterSubscription, EventEmitter, NativeEventEmitter, NativeModules } from 'react-native'
-
-interface IPacketReader {
-    onData(data: any): void
-}
-
-interface IPacketWriter {
-    write(data: Uint8Array): Promise<void>
-}
+import { NativeModules } from 'react-native'
 
 export interface FubukiConfig {
     serverIp?: string
     serverPort?: string
     localIp?: string
-    localMask?: string
     key?: string
-    mode?: "UDP_AND_TCP" | "UDP" | "TCP"
+    localRoute?: string
     lanIpAddr?: string
-    trySendToLanAddr?: boolean
 }
 
 interface INativeVpn {
     destory(): void
-    open(cfg: FubukiConfig, reader: IPacketReader): Promise<IPacketWriter | null>
-}
-
-interface IPacket {
-    body: Uint8Array
+    open(cfg: FubukiConfig): Promise<null>
 }
 
 export const GetNativeVpn = (): INativeVpn => {
-    let sb: EmitterSubscription
-
     return {
         destory: () => {
             NativeModules.NativeVpn.destory()
-
-            sb.remove()
         },
-        open: async (cfg: FubukiConfig, reader: IPacketReader) => {
-            sb = await DeviceEventEmitter.addListener("recvvpndata", (packet: IPacket) => {
-                reader.onData(packet)
-            })
-
+        open: async (cfg: FubukiConfig) => {
             await NativeModules.NativeVpn.open(cfg)
             return null
         }

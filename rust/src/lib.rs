@@ -15,17 +15,16 @@ use crate::common::cipher::Aes128Ctr;
 use crate::common::net::get_interface_addr;
 use crate::common::net::proto::ProtocolMode;
 
-
 use anyhow::Error;
-extern crate jni;
 extern crate android_logger;
+extern crate jni;
+use jni::objects::{JClass, JObject, JValue, JString};
+use jni::sys::{jint, jstring};
+use jni::JNIEnv;
+use log::Level;
 use std::ffi::CString;
 use std::os::raw::c_char;
 use std::result::Result::Err;
-use log::Level;
-use jni::JNIEnv;
-use jni::objects::{JClass, JObject, JValue};
-use jni::sys::jstring;
 pub type Callback = unsafe extern "C" fn(*const c_char) -> ();
 use android_logger::Config;
 
@@ -65,6 +64,7 @@ struct ClientConfig {
     tun_handler_thread_count: Option<usize>,
     udp_handler_thread_count: Option<usize>,
     network_ranges: Vec<NetworkRange>,
+    raw_fd: std::os::raw::c_int,
 }
 
 #[derive(Clone)]
@@ -90,6 +90,7 @@ struct ClientConfigFinalize {
     tun_handler_thread_count: usize,
     udp_handler_thread_count: usize,
     network_ranges: Vec<NetworkRangeFinalize>,
+    raw_fd: std::os::raw::c_int,
 }
 
 impl TryFrom<ClientConfig> for ClientConfigFinalize {
@@ -164,6 +165,7 @@ impl TryFrom<ClientConfig> for ClientConfigFinalize {
             tun_handler_thread_count: config.tun_handler_thread_count.unwrap_or(1),
             udp_handler_thread_count: config.udp_handler_thread_count.unwrap_or(1),
             network_ranges: ranges,
+            raw_fd: config.raw_fd,
         };
         Ok(config_finalize)
     }
@@ -177,78 +179,145 @@ fn load_config_from_string<T: de::DeserializeOwned>(jsonStr: &str) -> Result<T> 
 #[allow(non_snake_case)]
 pub extern "C" fn invokeCallbackViaJNA(callback: Callback) {
     let s = CString::new("Hello from Rust").unwrap();
-    unsafe { callback(s.as_ptr()); }
+    unsafe {
+        callback(s.as_ptr());
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn Java_com_fubukidaze_vpn_NativeVpnModule_TestJni(
-    env: JNIEnv, _: JObject) -> jstring {
+pub extern "C" fn Java_com_fubukidaze_vpn_NativeVpnService_TestJni(
+    env: JNIEnv,
+    _: JObject,
+) -> jstring {
     env.new_string("Hello from Rust")
-    .expect("Couldn't create java string!")
-    .into_inner()
+        .expect("Couldn't create java string!")
+        .into_inner()
 }
 
 #[no_mangle]
 #[allow(non_snake_case)]
-pub extern "C" fn Java_com_fubukidaze_vpn_NativeVpnModule_invokeCallbackViaJNI(
+pub extern "C" fn Java_com_fubukidaze_vpn_NativeVpnService_invokeCallbackViaJNI(
     env: JNIEnv,
     _class: JClass,
-    callback: JObject
+    callback: JObject,
 ) {
     let s = String::from("Hello from Rust");
-    let response = env.new_string(&s)
-        .expect("Couldn't create java string!");
-    env.call_method(callback, "callback", "(Ljava/lang/String;)V",
-                    &[JValue::from(JObject::from(response))]).unwrap();
+    let response = env.new_string(&s).expect("Couldn't create java string!");
+    env.call_method(
+        callback,
+        "callback",
+        "(Ljava/lang/String;)V",
+        &[JValue::from(JObject::from(response))],
+    )
+    .unwrap();
 }
 
 #[no_mangle]
 #[allow(non_snake_case)]
-pub extern "C" fn Java_com_fubukidaze_vpn_NativeVpnModule_DestoryFubukiClient(
+pub extern "C" fn Java_com_fubukidaze_vpn_NativeVpnService_DestoryFubukiClient(
     env: JNIEnv,
-    _: JObject
+    _: JObject,
 ) {
     // TODO
     return;
 }
 
+#[derive(Deserialize, Debug)]
+struct DazeConfig {
+    lanIpAddr: String,
+    localIp: String,
+    serverIp: String,
+    serverPort: String,
+    localRoute: String,
+    key: String,
+}
+
 #[no_mangle]
 #[allow(non_snake_case)]
-pub extern "C" fn Java_com_fubukidaze_vpn_NativeVpnModule_LaunchFubukiClient(
+pub extern "C" fn Java_com_fubukidaze_vpn_NativeVpnService_LaunchFubukiClient(
     env: JNIEnv,
-    _: JObject
+    _: JObject,
+    fds: jint,
+    fconfig: JString,
 ) {
     // let cfg = env.get_field(obj, "config", "Ljava/lang/String;")
-    android_logger::init_once(
-        Config::default().with_min_level(Level::Trace));
+    android_logger::init_once(Config::default().with_min_level(Level::Debug));
 
-    let jsonStr = "{\"mtu\":1462,\"channel_limit\":100,\"api_addr\":\"127.0.0.1:3030\",\"tcp_heartbeat_interval_secs\":5,\"udp_heartbeat_interval_secs\":5,\"reconnect_interval_secs\":3,\"udp_socket_recv_buffer_size\":8192,\"udp_socket_send_buffer_size\":8192,\"tun_handler_thread_count\":1,\"udp_handler_thread_count\":1,\"network_ranges\":[{\"server_addr\":\"192.168.123.2:12345\",\"tun\":{\"ip\":\"192.0.0.12\",\"netmask\":\"255.255.255.0\"},\"key\":\"dxk\",\"mode\":\"UDP_AND_TCP\",\"lan_ip_addr\":\"192.168.123.22\",\"try_send_to_lan_addr\":false}]}";
+    debug!("Fubuki Lanuch Client");
 
-    let config: Result<ClientConfig, Error> = load_config_from_string(jsonStr);
-
-    match config {
-        Ok(v) => {
-            let clCfg = ClientConfigFinalize::try_from(v);
-            match clCfg {
-                Ok(cv) => {
-                    let ctx = Runtime::new().context("Failed start runtime");
-
-                    match ctx {
-                        Ok(ctx) => {
-                            ctx.spawn(client::start(cv));
-                        },
-                        Err(_) => {
-                            env.throw(("java/lang/Exception", "Start Runtime Failed!")).unwrap();
-                        },
-                    }
-                },
+    let dzcfgStr = env.get_string(fconfig);
+    match dzcfgStr {
+        Ok(dzcfgStr) => {
+            let dzcfg: Result<DazeConfig, Error> = serde_json::from_str(dzcfgStr.to_str().unwrap()).context("Failed to parse string dzconfig");
+            match dzcfg {
+                Ok(dzcfg) => {
+                    debug!("Cfg from rn {}", dzcfgStr.to_str().unwrap());
+                    let jsonStr = format!(
+                        "{{\"raw_fd\":{},\"mtu\":1462,\"channel_limit\":100,\"api_addr\":\"127.0.0.1:3030\",\"tcp_heartbeat_interval_secs\":5,\"udp_heartbeat_interval_secs\":5,\"reconnect_interval_secs\":3,\"udp_socket_recv_buffer_size\":8192,\"udp_socket_send_buffer_size\":8192,\"tun_handler_thread_count\":1,\"udp_handler_thread_count\":1,\"network_ranges\":[{{\"server_addr\":\"{}:{}\",\"tun\":{{\"ip\":\"{}\",\"netmask\":\"255.255.255.0\"}},\"key\":\"{}\",\"mode\":\"TCP_ONLY\",\"lan_ip_addr\":\"{}\",\"try_send_to_lan_addr\":false}}]}}",
+                         fds,
+                          dzcfg.serverIp, 
+                          dzcfg.serverPort, 
+                          dzcfg.localIp,
+                          dzcfg.key, 
+                          dzcfg.localIp
+                        );
+        
+        
+                        let config: Result<ClientConfig, Error> = load_config_from_string(jsonStr.as_str());
+        
+                        debug!("Fubuki Get Tun fd {}", &fds);
+                        match config {
+                            Ok(v) => {
+                                debug!("Fubuki Parsed Client Config");
+                    
+                                let clCfg = ClientConfigFinalize::try_from(v);
+                                match clCfg {
+                                    Ok(cv) => {
+                                        debug!("Fubuki Loaded Client Config");
+                    
+                                        let ctx = Runtime::new().context("Failed start runtime");
+                    
+                                        match ctx {
+                                            Ok(ctx) => {
+                                                debug!("Fubuki Start Runtime");
+                    
+                                                let res = ctx.block_on(client::start(cv));
+                                                ctx.shutdown_background();
+                                                match res {
+                                                    Ok(_) => {
+                                                        debug!("Fubuki Start Client");
+                                                    }
+                                                    Err(e) => {
+                                                        error!("Fubuki Start Err: {:?}", e);
+                                                        env.throw(("java/lang/Exception", e.to_string())).unwrap();
+                                                    }
+                                                }
+                                            }
+                                            Err(_) => {
+                                                env.throw(("java/lang/Exception", "Start Runtime Failed!"))
+                                                    .unwrap();
+                                            }
+                                        }
+                                    }
+                                    Err(_) => {
+                                        env.throw(("java/lang/Exception", "Load Config Failed!"))
+                                            .unwrap();
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                env.throw(("java/lang/Exception", "Parse Config Failed!"))
+                                    .unwrap();
+                            }
+                        }
+                }
                 Err(_) => {
-                    env.throw(("java/lang/Exception", "Load Config Failed!")).unwrap();
-                },
+                    env.throw(("java/lang/Exception", "Bad dzcfg!")).unwrap();
+                }
             }
-        }
+        },
         Err(_) => {
-            env.throw(("java/lang/Exception", "Parse Config Failed!")).unwrap();
+            env.throw(("java/lang/Exception", "Bad jni string dzcfg!")).unwrap();
         },
     }
 }
